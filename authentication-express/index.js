@@ -22,6 +22,7 @@ mongoose
 
 app.post("/register", async (req, res) => {
   const body = req.body;
+  console.log("✌️body --->", body);
   // we are having email , name and password
   const useremail = body.email;
   const name = body.name;
@@ -39,7 +40,7 @@ app.post("/register", async (req, res) => {
     const salt = bcrypt.genSaltSync(10);
     const hashedPassword = bcrypt.hashSync(password, salt);
     console.log("✌️hashedPassword --->", hashedPassword);
-    const token = jwt.sign(isUserAlreadyExist, "supersecret");
+    const token = jwt.sign(useremail, "supersecret");
     console.log("✌️token --->", token);
     await User.create({
       name: name,
