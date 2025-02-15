@@ -114,11 +114,195 @@ app.post("/add-product", async (req, res) => {
   });
 });
 
+app.patch("/product/update/:id", async (req, res) => {
+  const { description, name, price, stock, brand, image } = req.body;
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).send("Product Id Not Found");
+  }
+
+  try {
+    const updatedProduct = await Product.findByIdAndUpdate(id, {
+      description,
+      name,
+      price,
+      stock,
+      brand,
+      image,
+    });
+
+    if (!updatedProduct) {
+      return res.status(404).send("Product Not Found");
+    }
+
+    res.status(200).json({
+      message: "Product Updated Successfully",
+      product: updatedProduct,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error Updating Product", error });
+  }
+});
+
+app.delete("/product/delete/:id", async (req, res) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).send("Product Id Not Found");
+  }
+
+  try {
+    const deletedProduct = await Product.findByIdAndDelete(id);
+
+    if (!deletedProduct) {
+      return res.status(404).send("Product Not Found");
+    }
+
+    res.status(200).json({
+      message: "Product Deleted Successfully",
+      product: deletedProduct,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error Deleting Product", error });
+  }
+});
+
+app.get("/product/search/:keyword", async (req, res) => {
+  const { keyword } = req.params;
+
+  try {
+    const products = await Product.find({
+      name: { $regex: keyword, $options: "i" },
+    });
+    // $options: "i"  ==  if product if apple aand we search for ApPle then also it will return same products apple
+
+    if (products.length === 0) {
+      return res.status(404).json({ message: "No Products Found" });
+    }
+
+    res.status(200).json({
+      message: "Products Found",
+      products: products,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error Searching Products", error });
+  }
+});
+
 app.post("/cart/add", async (req, res) => {
   const body = req.body;
-  const header = req.headers;
-  console.log("✌️header --->", header);
-  console.log("BODY--->", body);
+
+  const productsArray = body.products;
+  let totalPrice = 0;
+
+  try {
+    for (const item of productsArray) {
+      const product = await Product.findById(item);
+      if (product) {
+        totalPrice += product.price;
+      }
+    }
+
+    const { token } = req.headers;
+    const decodedToken = jwt.verify(token, "supersecret");
+    const user = await User.findOne({ email: decodedToken });
+
+    if (!user) {
+      return res.status(404).json({ message: "User Not Found" });
+    }
+
+    let cart;
+    if (user.cart) {
+      cart = await Cart.findById(user.cart).populate("products");
+      const existingProductIds = cart.products.map((product) =>
+        product._id.toString()
+      );
+
+      productsArray.forEach(async (productId) => {
+        if (!existingProductIds.includes(productId)) {
+          cart.products.push(productId);
+          const product = await Product.findById(productId);
+          totalPrice += product.price;
+        }
+      });
+
+      cart.total = totalPrice;
+      await cart.save();
+    } else {
+      cart = new Cart({
+        products: productsArray,
+        total: totalPrice,
+      });
+
+      await cart.save();
+      user.cart = cart._id;
+      await user.save();
+    }
+
+    res.status(201).json({
+      message: "Cart Updated Successfully",
+      cart: cart,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error Adding to Cart", error });
+  }
+});
+
+app.get("/cart", async (req, res) => {
+  const { token } = req.headers;
+  const decodedToken = jwt.verify(token, "supersecret");
+  const user = await User.findOne({ email: decodedToken }).populate({
+    path: "cart",
+    populate: {
+      path: "products",
+      model: "Product",
+    },
+  });
+
+  if (!user) {
+    return res.status(400).send("User Not Found");
+  }
+
+  res.status(200).json({ cart: user.cart });
+});
+
+app.delete("/cart/product/delete", async (req, res) => {
+  const { productID } = req.body;
+  const { token } = req.headers;
+
+  try {
+    const decodedToken = jwt.verify(token, "supersecret");
+    const user = await User.findOne({ email: decodedToken }).populate("cart");
+
+    if (!user) {
+      return res.status(404).json({ message: "User Not Found" });
+    }
+
+    const cart = await Cart.findById(user.cart).populate("products");
+
+    if (!cart) {
+      return res.status(404).json({ message: "Cart Not Found" });
+    }
+
+    const productIndex = cart.products.findIndex(product => product._id.toString() === productID);
+
+    if (productIndex === -1) {
+      return res.status(404).json({ message: "Product Not Found in Cart" });
+    }
+
+    cart.products.splice(productIndex, 1);
+    cart.total = cart.products.reduce((total, product) => total + product.price, 0);
+
+    await cart.save();
+
+    res.status(200).json({
+      message: "Product Removed from Cart Successfully",
+      cart: cart,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error Removing Product from Cart", error });
+  }
 });
 
 app.listen(4242, () => {
