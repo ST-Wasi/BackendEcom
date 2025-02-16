@@ -2,6 +2,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const { User } = require("./modals/User");
 const { Product } = require("./modals/Product");
+const morgan = require("morgan");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const { isUser } = require("./middlewares/isUser");
@@ -11,6 +12,8 @@ const { Cart } = require("./modals/Cart");
 const app = express();
 app.use(express.json());
 app.use(cors());
+app.use(morgan("dev"));
+
 mongoose
   .connect("mongodb://localhost:27017/klecommerce")
   .then(() => {
@@ -114,34 +117,63 @@ app.post("/add-product", async (req, res) => {
   });
 });
 
-app.patch("/product/update/:id", async (req, res) => {
-  const { description, name, price, stock, brand, image } = req.body;
+app.patch("/product/edit/:id", async (req, res) => {
   const { id } = req.params;
-
-  if (!id) {
-    return res.status(400).send("Product Id Not Found");
-  }
-
+  const { token } = req.headers;
+  const body = req.body.productData;
+  const name = body.name;
+  const description = body.description;
+  const image = body.image;
+  const price = body.price;
+  const brand = body.brand;
+  const stock = body.stock;
+  const userEmail = jwt.verify(token, "supersecret");
   try {
-    const updatedProduct = await Product.findByIdAndUpdate(id, {
-      description,
+    console.log({
       name,
-      price,
-      stock,
-      brand,
+      description,
       image,
+      price,
+      brand,
+      stock,
     });
-
-    if (!updatedProduct) {
-      return res.status(404).send("Product Not Found");
+    if (userEmail) {
+      const updatedProduct = await Product.findByIdAndUpdate(id, {
+        name,
+        description,
+        image,
+        price,
+        brand,
+        stock,
+      });
+      res.status(200).json({ message: "Product Updated Succesfully" });
     }
-
-    res.status(200).json({
-      message: "Product Updated Successfully",
-      product: updatedProduct,
-    });
   } catch (error) {
-    res.status(500).json({ message: "Error Updating Product", error });
+    res.status(400).json({
+      message: "Internal Server Error Occured While Updating Product",
+    });
+  }
+});
+
+app.get("/product/:id", async (req, res) => {
+  const { id } = req.params;
+  if (!id) {
+    res.status(400), json({ message: "Product Id Not Found" });
+  }
+  const { token } = req.headers;
+  try {
+    const userEmailFromToken = jwt.verify(token, "supersecret");
+    if (userEmailFromToken) {
+      const product = await Product.findById(id);
+      if (!product) {
+        res.status(400).json({ message: "Product Not Found" });
+      }
+      res.status(200).json({ message: "Success", product });
+    }
+  } catch (error) {
+    res.status(400).json({
+      message: "Internal Server Error Occured while Getting Single Product",
+    });
   }
 });
 
@@ -285,14 +317,19 @@ app.delete("/cart/product/delete", async (req, res) => {
       return res.status(404).json({ message: "Cart Not Found" });
     }
 
-    const productIndex = cart.products.findIndex(product => product._id.toString() === productID);
+    const productIndex = cart.products.findIndex(
+      (product) => product._id.toString() === productID
+    );
 
     if (productIndex === -1) {
       return res.status(404).json({ message: "Product Not Found in Cart" });
     }
 
     cart.products.splice(productIndex, 1);
-    cart.total = cart.products.reduce((total, product) => total + product.price, 0);
+    cart.total = cart.products.reduce(
+      (total, product) => total + product.price,
+      0
+    );
 
     await cart.save();
 
@@ -301,7 +338,9 @@ app.delete("/cart/product/delete", async (req, res) => {
       cart: cart,
     });
   } catch (error) {
-    res.status(500).json({ message: "Error Removing Product from Cart", error });
+    res
+      .status(500)
+      .json({ message: "Error Removing Product from Cart", error });
   }
 });
 
