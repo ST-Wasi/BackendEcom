@@ -42,9 +42,9 @@ app.post("/register", async (req, res) => {
   } else {
     const salt = bcrypt.genSaltSync(10);
     const hashedPassword = bcrypt.hashSync(password, salt);
-    console.log("✌️hashedPassword --->", hashedPassword);
+
     const token = jwt.sign(useremail, "supersecret");
-    console.log("✌️token --->", token);
+
     await User.create({
       name: name,
       email: useremail,
