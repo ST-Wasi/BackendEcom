@@ -1,6 +1,6 @@
 const express = require("express");
 const mongoose = require("mongoose");
-const {User} = require("./modals/User");
+const { User } = require("./modals/User");
 const { Product } = require("./modals/Product");
 const morgan = require("morgan");
 const bcrypt = require("bcrypt");
@@ -25,7 +25,6 @@ mongoose
 
 app.post("/register", async (req, res) => {
   const body = req.body;
-  console.log("✌️body --->", body);
   // we are having email , name and password
   const useremail = body.email;
   const name = body.name;
@@ -36,7 +35,6 @@ app.post("/register", async (req, res) => {
   const isUserAlreadyExist = await User.findOne({ email: useremail });
 
   if (isUserAlreadyExist) {
-    console.log("✌️isUserAlreadyExist --->", isUserAlreadyExist);
     res.status(400).json({ message: "User Already Have An Account" });
     return;
   } else {
@@ -69,9 +67,9 @@ app.post("/login", async (req, res) => {
   if (user) {
     // if user exist, we have to do something
     const isPasswordMatched = bcrypt.compareSync(password, user.password);
-    console.log("✌️isPasswordMatched --->", isPasswordMatched);
     if (isPasswordMatched == true) {
       res.status(200).json({
+        id: user._id,
         name: user.name,
         token: user.token,
         email: user.email,
@@ -100,6 +98,10 @@ app.get("/products", async (req, res) => {
 app.post("/add-product", async (req, res) => {
   const body = req.body;
   const name = body.name;
+  const { token } = req.headers;
+  const decodedtoken = jwt.verify(token, "supersecret");
+  console.log("✌️decodedtoken --->", decodedtoken);
+  const user = await User.findOne({ email: decodedtoken.email });
   const description = body.description;
   const image = body.image;
   const price = body.price;
@@ -113,6 +115,7 @@ app.post("/add-product", async (req, res) => {
     stock: stock,
     brand: brand,
     price: price,
+    user: user._id,
   });
   res.status(201).json({
     message: "Product Created Succesfully",
@@ -139,7 +142,7 @@ app.patch("/product/edit/:id", async (req, res) => {
       brand,
       stock,
     });
-    if (userEmail) {
+    if (userEmail.email) {
       const updatedProduct = await Product.findByIdAndUpdate(id, {
         name,
         description,
@@ -165,7 +168,7 @@ app.get("/product/:id", async (req, res) => {
   const { token } = req.headers;
   try {
     const userEmailFromToken = jwt.verify(token, "supersecret");
-    if (userEmailFromToken) {
+    if (userEmailFromToken.email) {
       const product = await Product.findById(id);
       if (!product) {
         res.status(400).json({ message: "Product Not Found" });
@@ -240,7 +243,7 @@ app.post("/cart/add", async (req, res) => {
 
     const { token } = req.headers;
     const decodedToken = jwt.verify(token, "supersecret");
-    const user = await User.findOne({ email: decodedToken });
+    const user = await User.findOne({ email: decodedToken.email });
 
     if (!user) {
       return res.status(404).json({ message: "User Not Found" });
@@ -286,7 +289,7 @@ app.post("/cart/add", async (req, res) => {
 app.get("/cart", async (req, res) => {
   const { token } = req.headers;
   const decodedToken = jwt.verify(token, "supersecret");
-  const user = await User.findOne({ email: decodedToken }).populate({
+  const user = await User.findOne({ email: decodedToken.email }).populate({
     path: "cart",
     populate: {
       path: "products",
@@ -307,7 +310,7 @@ app.delete("/cart/product/delete", async (req, res) => {
 
   try {
     const decodedToken = jwt.verify(token, "supersecret");
-    const user = await User.findOne({ email: decodedToken }).populate("cart");
+    const user = await User.findOne({ email: decodedToken.email }).populate("cart");
 
     if (!user) {
       return res.status(404).json({ message: "User Not Found" });
@@ -345,6 +348,8 @@ app.delete("/cart/product/delete", async (req, res) => {
       .json({ message: "Error Removing Product from Cart", error });
   }
 });
+
+app.post("/cart/payment", async (req, res) => {});
 
 app.listen(4242, () => {
   console.log("Server is Started on 4242");
