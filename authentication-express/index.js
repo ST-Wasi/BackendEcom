@@ -1,6 +1,6 @@
 const express = require("express");
 const mongoose = require("mongoose");
-const { User } = require("./modals/User");
+const {User} = require("./modals/User");
 const { Product } = require("./modals/Product");
 const morgan = require("morgan");
 const bcrypt = require("bcrypt");
@@ -43,7 +43,9 @@ app.post("/register", async (req, res) => {
     const salt = bcrypt.genSaltSync(10);
     const hashedPassword = bcrypt.hashSync(password, salt);
 
-    const token = jwt.sign(useremail, "supersecret");
+    const token = jwt.sign({ email: useremail }, "supersecret", {
+      expiresIn: "365d",
+    });
 
     await User.create({
       name: name,
