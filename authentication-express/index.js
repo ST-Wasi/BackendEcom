@@ -1,4 +1,5 @@
 const express = require("express");
+const dotenv = require("dotenv").config();
 const mongoose = require("mongoose");
 const { User } = require("./modals/User");
 const { Product } = require("./modals/Product");
@@ -8,6 +9,8 @@ const jwt = require("jsonwebtoken");
 const { isUser } = require("./middlewares/isUser");
 const cors = require("cors");
 const { Cart } = require("./modals/Cart");
+const sendEmail = require("./utils/sendEmail");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 app.use(express.json());
@@ -15,7 +18,7 @@ app.use(cors());
 app.use(morgan("dev"));
 
 mongoose
-  .connect("mongodb://localhost:27017/klecommerce")
+  .connect(process.env.MONGO_DB_URL)
   .then(() => {
     console.log("MongoDb Is Connected");
   })
@@ -310,7 +313,9 @@ app.delete("/cart/product/delete", async (req, res) => {
 
   try {
     const decodedToken = jwt.verify(token, "supersecret");
-    const user = await User.findOne({ email: decodedToken.email }).populate("cart");
+    const user = await User.findOne({ email: decodedToken.email }).populate(
+      "cart"
+    );
 
     if (!user) {
       return res.status(404).json({ message: "User Not Found" });
@@ -349,7 +354,55 @@ app.delete("/cart/product/delete", async (req, res) => {
   }
 });
 
-app.post("/cart/payment", async (req, res) => {});
+app.post("/cart/payment", async (req, res) => {
+  const { token } = req.headers;
+
+  try {
+    const decodedToken = jwt.verify(token, "supersecret");
+    const user = await User.findOne({ email: decodedToken.email }).populate({
+      path: "cart",
+      populate: {
+        path: "products",
+        model: "Product",
+      },
+    });
+
+    if (!user || !user.cart) {
+      return res.status(404).json({ message: "User or Cart Not Found" });
+    }
+
+    const lineItems = user.cart.products.map((cartItem) => ({
+      price_data: {
+        currency: "inr",
+        product_data: {
+          name: cartItem.name,
+        },
+        unit_amount: cartItem.price * 100,
+      },
+      quantity: 1,
+    }));
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: lineItems,
+      mode: "payment",
+      success_url: `${process.env.CLIENT_URL}/success`,
+      cancel_url: `${process.env.CLIENT_URL}/cancel`,
+    });
+
+    await sendEmail(user.email, user.cart.products);
+
+    // Empty the cart
+    user.cart.products = [];
+    user.cart.total = 0;
+    await user.cart.save(); // Save the cart changes
+    await user.save(); // Save the user changes
+
+    res.status(200).json({ url: session.url });
+  } catch (error) {
+    res.status(500).json({ message: "Payment Failed", error });
+  }
+});
 
 app.listen(4242, () => {
   console.log("Server is Started on 4242");
